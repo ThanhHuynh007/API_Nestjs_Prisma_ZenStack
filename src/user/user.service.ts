@@ -2,6 +2,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 @Injectable()
 export class UserService {
   constructor(private prisma: PrismaService) { }
@@ -17,6 +18,12 @@ export class UserService {
     if (currentUser.role !== 'ADMIN' && currentUser.sub !== id) {
       throw new ForbiddenException('You can only update your own account');
     }
+
+    // Nếu có trường password, hash nó trước khi lưu
+    if (data.password) {
+      data.password = await bcrypt.hash(data.password, 10);
+    }
+
     return this.prisma.user.update({
       where: { id },
       data,
