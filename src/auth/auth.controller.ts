@@ -1,9 +1,17 @@
 /* eslint-disable */
-import { Controller, Post, Body, UnauthorizedException } from '@nestjs/common';
+import {
+    Controller,
+    Post,
+    Body,
+    Req,
+    Res,
+    UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
 import { PrismaService } from '../prisma.service'; // đảm bảo đúng đường dẫn
+import { Request, Response } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -19,8 +27,23 @@ export class AuthController {
     }
 
     @Post('login')
-    login(@Body() body: { email: string; password: string }) {
-        return this.authService.login(body.email, body.password);
+    async login(
+        @Body() body: { email: string; password: string },
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        const { access_token, refresh_token } = await this.authService.login(
+            body.email,
+            body.password,
+        );
+
+        res.cookie('refresh_token', refresh_token, {
+            httpOnly: true,
+            secure: true, // set to true in production with HTTPS
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        });
+
+        return { access_token };
     }
 
     async loginOAuth(user: any) {
@@ -40,37 +63,41 @@ export class AuthController {
     }
 
     @Post('refresh-token')
-    async refreshToken(@Body() body: { refresh_token: string }) {
-        const { refresh_token } = body;
-
+    async refreshToken(
+        @Req() req: Request,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        const refresh_token = req.cookies?.refresh_token;
         if (!refresh_token) {
             throw new UnauthorizedException('Refresh token required');
         }
 
-        try {
-            // Verify refresh token
-            const payload = this.jwtService.verify(refresh_token);
+        const { access_token, refresh_token: new_refresh_token } =
+            await this.authService.refreshToken(refresh_token);
 
-            // Check token trong DB
-            const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-            if (!user || user.refreshToken !== refresh_token) {
-                throw new UnauthorizedException('Invalid refresh token');
-            }
+        res.cookie('refresh_token', new_refresh_token, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
 
-            // Tạo token mới
-            const newPayload = { sub: user.id, email: user.email, role: user.role };
-            const access_token = this.jwtService.sign(newPayload, { expiresIn: '15m' });
-            const new_refresh_token = this.jwtService.sign(newPayload, { expiresIn: '7d' });
-
-            // Cập nhật refresh token mới vào DB
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: { refreshToken: new_refresh_token },
-            });
-
-            return { access_token, refresh_token: new_refresh_token };
-        } catch (err) {
-            throw new UnauthorizedException('Invalid refresh token');
-        }
+        return { access_token };
     }
+
+    @Post('logout')
+    async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+        const refresh_token = req.cookies?.refresh_token;
+        if (refresh_token) {
+            const payload = this.jwtService.decode(refresh_token) as { sub: string };
+            if (payload?.sub) {
+                await this.authService.revokeToken(payload.sub);
+            }
+        }
+
+        res.clearCookie('refresh_token');
+
+        return { message: 'Logged out successfully' };
+    }
+
 }

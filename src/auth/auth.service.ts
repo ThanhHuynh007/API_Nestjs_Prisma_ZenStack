@@ -40,14 +40,16 @@ export class AuthService {
 
         const payload = { sub: user.id, email: user.email, role: user.role };
 
-        const access_token = this.jwtService.sign(payload, { expiresIn: '5m' });
+        const access_token = this.jwtService.sign(payload, { expiresIn: '15m' });
         const refresh_token = this.jwtService.sign(payload, { expiresIn: '7d' });
 
         // Lưu refresh_token vào DB (user table hoặc riêng bảng) để quản lý
+        const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
         await this.prisma.user.update({
             where: { id: user.id },
-            data: { refreshToken: refresh_token },
+            data: { refreshToken: hashedRefreshToken },
         });
+
 
         return {
             status: 'OK',
@@ -84,9 +86,10 @@ export class AuthService {
         const access_token = this.jwtService.sign(payload, { expiresIn: '5m' });
         const refresh_token = this.jwtService.sign(payload, { expiresIn: '7d' });
 
+        const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
         await this.prisma.user.update({
             where: { id: user.id },
-            data: { refreshToken: refresh_token },
+            data: { refreshToken: hashedRefreshToken },
         });
 
         return {
@@ -107,10 +110,12 @@ export class AuthService {
             const access_token = this.jwtService.sign(payload, { expiresIn: '15m' });
             const refresh_token = this.jwtService.sign(payload, { expiresIn: '7d' });
 
+            const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
             await this.prisma.user.update({
                 where: { id: existingUserByPhone.id },
-                data: { refreshToken: refresh_token },
+                data: { refreshToken: hashedRefreshToken },
             });
+
 
             return { access_token, refresh_token };
         }
@@ -143,12 +148,65 @@ export class AuthService {
         const access_token = this.jwtService.sign(payload, { expiresIn: '15m' });
         const refresh_token = this.jwtService.sign(payload, { expiresIn: '7d' });
 
+        const hashedRefreshToken = await bcrypt.hash(refresh_token, 10);
         await this.prisma.user.update({
             where: { id: user.id },
-            data: { refreshToken: refresh_token },
+            data: { refreshToken: hashedRefreshToken },
         });
 
         return { access_token, refresh_token };
+    }
+
+    async validateRefreshToken(refreshToken: string, userId: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user || !user.refreshToken) return false;
+        return await bcrypt.compare(refreshToken, user.refreshToken);
+    }
+
+    async revokeToken(userId: string) {
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { refreshToken: null },
+        });
+    }
+
+    async refreshToken(refreshToken: string) {
+        try {
+            // Giải mã refresh token
+            const payload = this.jwtService.verify(refreshToken);
+
+            // Lấy user theo id từ token
+            const user = await this.prisma.user.findUnique({
+                where: { id: payload.sub },
+            });
+
+            // Kiểm tra token có khớp không
+            if (!user || !user.refreshToken) {
+                throw new UnauthorizedException('User not found or no token');
+            }
+
+            const isValid = await bcrypt.compare(refreshToken, user.refreshToken);
+            if (!isValid) {
+                throw new UnauthorizedException('Invalid refresh token');
+            }
+
+            // Cấp token mới
+            const newPayload = { sub: user.id, email: user.email, role: user.role };
+            const access_token = this.jwtService.sign(newPayload, { expiresIn: '5m' });
+            const new_refresh_token = this.jwtService.sign(newPayload, { expiresIn: '7d' });
+
+            const hashedNewRefreshToken = await bcrypt.hash(new_refresh_token, 10);
+
+            await this.prisma.user.update({
+                where: { id: user.id },
+                data: { refreshToken: hashedNewRefreshToken },
+            });
+
+            return { access_token, refresh_token: new_refresh_token };
+        } catch (err) {
+            console.error('❌ Refresh token error:', err);
+            throw new UnauthorizedException('Invalid refresh token');
+        }
     }
 
 }

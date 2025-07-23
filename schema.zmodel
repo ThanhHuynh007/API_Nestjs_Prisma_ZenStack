@@ -17,6 +17,19 @@ enum Role {
   USER
 }
 
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
 model User {
   id        String    @id @default(uuid())
   name      String
@@ -27,6 +40,7 @@ model User {
 
   // 👇 Correct relation field (must match "createdBy" on Product)
   products  Product[] @relation("UserCreatedProducts")
+  orders    Order[]
 
   @@allow('all', auth() != null)
   @@allow('create', true)
@@ -42,6 +56,9 @@ model Product {
   price       Float
   sku         String
   inStock     Boolean  @default(true)
+  quantity    Int      @default(0)
+  image       String?
+  category    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -49,9 +66,63 @@ model Product {
   createdBy   User?    @relation("UserCreatedProducts", fields: [createdById], references: [id])
   createdById String?
 
+  orderItems  OrderItem[]
+
   @@allow('read', true)
   @@allow('create', auth() != null)
   @@allow('update', auth().id == createdById || auth().role == ADMIN)
   @@allow('delete', auth().id == createdById || auth().role == ADMIN)
 }
 
+model Order {
+  id               String      @id @default(uuid())
+  user             User        @relation(fields: [userId], references: [id])
+  userId           String
+  items            OrderItem[]
+  totalAmount      Float
+  discount         Float       @default(0)
+  shipping         Float       @default(0)
+  paymentMethod    String?
+  status           OrderStatus @default(PENDING)
+  shippingFullName String?
+  shippingAddress  String?
+  shippingCity     String?
+  shippingPhone    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt()
+
+  payment          Payment?
+
+  @@allow('read', auth().role == ADMIN || auth().id == userId)
+  @@allow('create', auth().id != null)
+  @@allow('update', auth().role == ADMIN || (auth().id == userId && status == PENDING))
+  @@allow('delete', auth().role == ADMIN || (auth().id == userId && status == CANCELLED))
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  order     Order   @relation(fields: [orderId], references: [id])
+  orderId   String
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+  quantity  Int     @default(1)
+  price     Float
+
+  @@allow('read', auth().role == ADMIN || order.userId == auth().id)
+  @@allow('create, update, delete', auth().role == ADMIN)
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String        @unique
+  method        String
+  amount        Float
+  status        PaymentStatus @default(PENDING)
+  transactionId String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt()
+
+  @@allow('read', auth().role == ADMIN || order.userId == auth().id)
+  @@allow('create, update, delete', auth().role == ADMIN)
+}

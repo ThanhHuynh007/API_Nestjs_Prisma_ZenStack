@@ -17,28 +17,87 @@ enum Role {
   USER
 }
 
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
 model User {
-  id           String    @id() @default(uuid())
-  name         String?
-  phone        String?   @unique
-  email        String?    @unique
-  password     String
-  refreshToken String?
-  googleId     String?   @unique
-  role         Role      @default(USER)
-  createdAt    DateTime  @default(now())
-  products     Product[] @relation("UserCreatedProducts")
+  id        String    @id() @default(uuid())
+  name      String
+  email     String    @unique()
+  password  String
+  role      Role      @default(USER)
+  createdAt DateTime  @default(now())
+  products  Product[] @relation("UserCreatedProducts")
+  orders    Order[]
+  phone         String?   @unique()
+  refreshToken  String?
+  googleId      String?
 }
 
 model Product {
-  id          String   @id() @default(cuid())
-  name        String   @unique()
+  id          String      @id() @default(cuid())
+  name        String      @unique()
   description String?
   price       Float
   sku         String
-  inStock     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt()
-  createdBy   User?    @relation("UserCreatedProducts", fields: [createdById], references: [id])
+  inStock     Boolean     @default(true)
+  quantity    Int         @default(0)
+  image       String?
+  category    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt()
+  createdBy   User?       @relation("UserCreatedProducts", fields: [createdById], references: [id])
   createdById String?
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id               String      @id() @default(uuid())
+  user             User        @relation(fields: [userId], references: [id])
+  userId           String
+  items            OrderItem[]
+  totalAmount      Float
+  discount         Float       @default(0)
+  shipping         Float       @default(0)
+  paymentMethod    String?
+  status           OrderStatus @default(PENDING)
+  shippingFullName String?
+  shippingAddress  String?
+  shippingCity     String?
+  shippingPhone    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt()
+  payment          Payment?
+}
+
+model OrderItem {
+  id        String  @id() @default(uuid())
+  order     Order   @relation(fields: [orderId], references: [id])
+  orderId   String
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+  quantity  Int     @default(1)
+  price     Float
+}
+
+model Payment {
+  id            String        @id() @default(cuid())
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String        @unique()
+  method        String
+  amount        Float
+  status        PaymentStatus @default(PENDING)
+  transactionId String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt()
 }

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { Twilio } from 'twilio';
 import { ConfigService } from '@nestjs/config';

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import {
   Body,
   Controller,
@@ -8,23 +9,42 @@ import {
   Put,
   HttpException,
   HttpStatus,
+  UseGuards,
+  Query,
+  Req,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { Product } from '@prisma/client';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 
 @Controller('api/v1/product')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  constructor(private readonly productService: ProductService) { }
 
   @Get('/get-all')
-  async getAllProduct(): Promise<Product[]> {
-    return await this.productService.getAllProduct();
+  @Roles('ADMIN')
+  async getAllProduct(@Query() pagination: PaginationDto) {
+    return await this.productService.getAllProduct(pagination);
   }
 
   @Post('/create')
-  async postProduct(@Body() postData: Partial<Product>) {
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN') // chỉ admin mới được tạo
+  async postProduct(
+    @Body() postData: Partial<Product>,
+    @Req() req,
+  ) {
     try {
-      const product = await this.productService.createProduct(postData);
+      const userId = req.user.id; // lấy userId từ JWT
+      const product = await this.productService.createProduct({
+        ...postData,
+        createdById: userId,
+      });
+
       return {
         message: 'Product created successfully',
         data: product,
@@ -38,6 +58,7 @@ export class ProductController {
   }
 
   @Get('/get-detail/:id')
+  @UseGuards(JwtAuthGuard)
   async getProduct(@Param('id') id: string) {
     const product = await this.productService.getProduct(id);
     if (!product) {
@@ -46,7 +67,9 @@ export class ProductController {
     return product;
   }
 
+
   @Put('/update/:id')
+  @Roles('ADMIN')
   async updateProduct(
     @Param('id') id: string,
     @Body() postData: Partial<Product>,
@@ -66,6 +89,7 @@ export class ProductController {
   }
 
   @Delete('/delete/:id')
+  @Roles('ADMIN')
   async deleteProduct(@Param('id') id: string) {
     try {
       await this.productService.deleteProduct(id);
