@@ -200,4 +200,20 @@ export class OrderService {
         return updated;
     }
 
+    async markOrderAsCompleted(orderId: string) {
+        const order = await this.prisma.order.update({
+            where: { id: orderId },
+            data: {
+                status: 'COMPLETED',
+            },
+            include: {
+                items: {
+                    include: { product: true },
+                },
+                user: true,
+            },
+        });
+
+        return order;
+    }
 }

@@ -1,22 +1,20 @@
-// src/payment/payment.controller.ts
-import { Controller, Post, Body, Req } from '@nestjs/common';
-import { StripeService } from './stripe.service';
-import { OrderService } from 'src/order/order.service';
+import { Controller, Post, Body, Req, Res, Headers } from '@nestjs/common'
+import { PaymentService } from './payment.service'
+import { Response, Request } from 'express'
 
 @Controller('payment')
 export class PaymentController {
-  constructor(
-    private readonly stripeService: StripeService,
-    private readonly orderService: OrderService,
-  ) {}
+  constructor(private readonly paymentService: PaymentService) {}
 
-  @Post('checkout')
-  async createCheckout(@Body() body: { orderId: string }) {
-    const order = await this.orderService.getOrderById(body.orderId, {
-      id: '',
-      role: 'ADMIN', // Hoặc kiểm tra token
-    });
+  @Post('create-checkout-session')
+  async createCheckout(@Body() body: { orderId: string }, @Res() res: Response) {
+    const session = await this.paymentService.createCheckoutSession(body.orderId)
+    res.send({ url: session.url })
+  }
 
-    return this.stripeService.createCheckoutSession(order.id, order.totalAmount);
+  @Post('webhook')
+  async handleWebhook(@Req() req: Request, @Res() res: Response, @Headers('stripe-signature') sig: string) {
+    const result = await this.paymentService.handleWebhook(req, sig)
+    res.status(result.status).send(result.message)
   }
 }

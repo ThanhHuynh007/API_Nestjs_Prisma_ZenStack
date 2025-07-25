@@ -1,8 +1,10 @@
 /* eslint-disable */
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
+import * as nodemailer from 'nodemailer';
 @Injectable()
 export class AuthService {
     constructor(
@@ -38,7 +40,7 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials');
         }
 
-        const payload = { sub: user.id, email: user.email, role: user.role };
+        const payload = { sub: user.id, role: user.role };
 
         const access_token = this.jwtService.sign(payload, { expiresIn: '15m' });
         const refresh_token = this.jwtService.sign(payload, { expiresIn: '7d' });
@@ -81,7 +83,7 @@ export class AuthService {
 
 
     async loginOAuth(user: any) {
-        const payload = { sub: user.id, email: user.email, role: user.role };
+        const payload = { sub: user.id, role: user.role };
 
         const access_token = this.jwtService.sign(payload, { expiresIn: '5m' });
         const refresh_token = this.jwtService.sign(payload, { expiresIn: '7d' });
@@ -207,6 +209,69 @@ export class AuthService {
             console.error('❌ Refresh token error:', err);
             throw new UnauthorizedException('Invalid refresh token');
         }
+    }
+
+    async sendResetOtp(email: string) {
+        const user = await this.prisma.user.findUnique({ where: { email } });
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 chữ số
+        const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 phút
+
+        await this.prisma.user.update({
+            where: { email },
+            data: { otpCode: otp, otpExpiry: expiry },
+        });
+
+        // Gửi email
+        await this.sendOtpEmail(user.email, otp);
+
+        return { message: 'OTP has been sent to your email' };
+    }
+
+    private async sendOtpEmail(to: string, otp: string) {
+        const transporter = nodemailer.createTransport({
+            service: 'Gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+
+        await transporter.sendMail({
+            from: '"Support" <support@example.com>',
+            to,
+            subject: 'Your OTP Code',
+            html: `<p>Your OTP code is <b>${otp}</b>. It will expire in 5 minutes.</p>`,
+        });
+    }
+
+    async verifyOtpAndResetPassword(email: string, otp: string, newPassword: string) {
+        const user = await this.prisma.user.findUnique({ where: { email } });
+        if (
+            !user ||
+            user.otpCode !== otp ||
+            !user.otpExpiry ||
+            user.otpExpiry < new Date()
+        ) {
+            throw new UnauthorizedException('Invalid or expired OTP');
+        }
+
+
+        const hashed = await bcrypt.hash(newPassword, 10);
+
+        await this.prisma.user.update({
+            where: { email },
+            data: {
+                password: hashed,
+                otpCode: null,
+                otpExpiry: null,
+            },
+        });
+
+        return { message: 'Password reset successful' };
     }
 
 }

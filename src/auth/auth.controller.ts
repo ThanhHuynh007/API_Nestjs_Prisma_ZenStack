@@ -47,7 +47,7 @@ export class AuthController {
     }
 
     async loginOAuth(user: any) {
-        const payload = { sub: user.id, email: user.email, role: user.role };
+        const payload = { sub: user.id, role: user.role };
         const access_token = this.jwtService.sign(payload, { expiresIn: '15m' });
         const refresh_token = this.jwtService.sign(payload, { expiresIn: '7d' });
         await this.prisma.user.update({ where: { id: user.id }, data: { refreshToken: refresh_token } });
@@ -99,5 +99,20 @@ export class AuthController {
 
         return { message: 'Logged out successfully' };
     }
+
+    @Post('forgot-password')
+    sendOtp(@Body() body: { email: string }) {
+        return this.authService.sendResetOtp(body.email);
+    }
+
+    @Post('reset-password')
+    resetWithOtp(@Body() body: { email: string; otp: string; newPassword: string }) {
+        return this.authService.verifyOtpAndResetPassword(
+            body.email,
+            body.otp,
+            body.newPassword
+        );
+    }
+
 
 }

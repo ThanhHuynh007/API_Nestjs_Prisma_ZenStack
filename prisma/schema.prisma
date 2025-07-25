@@ -31,17 +31,19 @@ enum PaymentStatus {
 }
 
 model User {
-  id        String    @id() @default(uuid())
-  name      String
-  email     String    @unique()
-  password  String
-  role      Role      @default(USER)
-  createdAt DateTime  @default(now())
-  products  Product[] @relation("UserCreatedProducts")
-  orders    Order[]
-  phone         String?   @unique()
-  refreshToken  String?
-  googleId      String?
+  id           String    @id() @default(uuid())
+  name         String
+  email        String    @unique()
+  password     String
+  otpCode      String? // Mã OTP gửi qua email
+  otpExpiry    DateTime?
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
+  products     Product[] @relation("UserCreatedProducts")
+  orders       Order[]
+  phone        String?   @unique()
+  refreshToken String?
+  googleId     String?
 }
 
 model Product {
@@ -65,10 +67,12 @@ model Order {
   id               String      @id() @default(uuid())
   user             User        @relation(fields: [userId], references: [id])
   userId           String
+  email            String?
   items            OrderItem[]
   totalAmount      Float
   discount         Float       @default(0)
   shipping         Float       @default(0)
+  stripeSessionId  String?
   paymentMethod    String?
   status           OrderStatus @default(PENDING)
   shippingFullName String?
